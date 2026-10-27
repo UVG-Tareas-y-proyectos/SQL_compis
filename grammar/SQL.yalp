@@ -1,0 +1,273 @@
+/* Subconjunto SQL del enunciado, procesado con YAPar SLR propio. */
+%token ID NUMBER REAL STRING CREATE TABLE DROP INDEX ON INSERT INTO VALUES
+%token UPDATE SET DELETE SELECT DISTINCT FROM WHERE AND OR NOT ORDER BY ASC DESC
+%token INNER JOIN COUNT SUM AVG MIN MAX GROUP HAVING IN EXISTS AS IS NULL TRUE FALSE
+%token INT FLOAT VARCHAR BOOLEAN DATE PRIMARY KEY UNIQUE DEFAULT
+%token EQ NE LT LE GT GE PLUS MINUS STAR SLASH MOD LPAREN RPAREN COMMA DOT SEMI
+%%
+script: statements
+;
+
+statements: statements statement SEMI
+    | 
+;
+
+statement: create_table
+    | drop_table
+    | create_index
+    | drop_index
+    | insert_stmt
+    | update_stmt
+    | delete_stmt
+    | select_stmt
+;
+
+create_table: CREATE TABLE ID LPAREN table_elements RPAREN
+;
+
+table_elements: table_elements COMMA table_element
+    | table_element
+;
+
+table_element: column_def
+    | table_constraint
+;
+
+column_def: ID data_type column_constraints
+;
+
+data_type: INT
+    | FLOAT
+    | BOOLEAN
+    | DATE
+    | VARCHAR LPAREN NUMBER RPAREN
+;
+
+column_constraints: column_constraints column_constraint
+    | 
+;
+
+column_constraint: NOT NULL
+    | PRIMARY KEY
+    | UNIQUE
+    | DEFAULT signed_literal
+;
+
+table_constraint: PRIMARY KEY LPAREN identifiers RPAREN
+    | UNIQUE LPAREN identifiers RPAREN
+;
+
+identifiers: identifiers COMMA ID
+    | ID
+;
+
+signed_literal: literal
+    | MINUS NUMBER
+    | MINUS REAL
+;
+
+drop_table: DROP TABLE ID
+;
+
+create_index: CREATE INDEX ID ON ID LPAREN ID RPAREN
+;
+
+drop_index: DROP INDEX ID
+;
+
+insert_stmt: INSERT INTO ID insert_columns VALUES value_rows
+;
+
+insert_columns: LPAREN identifiers RPAREN
+    | 
+;
+
+value_rows: value_rows COMMA value_row
+    | value_row
+;
+
+value_row: LPAREN expressions RPAREN
+;
+
+update_stmt: UPDATE ID SET assignments where_clause
+;
+
+assignments: assignments COMMA assignment
+    | assignment
+;
+
+assignment: ID EQ expression
+;
+
+delete_stmt: DELETE FROM ID where_clause
+;
+
+select_stmt: SELECT distinct_clause select_items from_clause where_clause group_clause having_clause order_clause
+;
+
+distinct_clause: DISTINCT
+    | 
+;
+
+select_items: select_items COMMA select_item
+    | select_item
+;
+
+select_item: STAR
+    | ID DOT STAR
+    | expression select_alias
+;
+
+select_alias: AS ID
+    | ID
+    | 
+;
+
+from_clause: FROM table_ref joins
+    | 
+;
+
+table_ref: ID table_alias
+;
+
+table_alias: AS ID
+    | ID
+    | 
+;
+
+joins: joins join_clause
+    | 
+;
+
+join_clause: INNER JOIN table_ref ON expression
+    | JOIN table_ref ON expression
+;
+
+where_clause: WHERE expression
+    | 
+;
+
+group_clause: GROUP BY expressions
+    | 
+;
+
+having_clause: HAVING expression
+    | 
+;
+
+order_clause: ORDER BY order_items
+    | 
+;
+
+order_items: order_items COMMA order_item
+    | order_item
+;
+
+order_item: expression direction
+;
+
+direction: ASC
+    | DESC
+    | 
+;
+
+expressions: expressions COMMA expression
+    | expression
+;
+
+expression: or_expr
+;
+
+or_expr: or_expr OR and_expr
+    | and_expr
+;
+
+and_expr: and_expr AND not_expr
+    | not_expr
+;
+
+not_expr: NOT not_expr
+    | predicate
+;
+
+predicate: additive predicate_tail
+;
+
+predicate_tail: comparison additive
+    | IS NULL
+    | IS NOT NULL
+    | IN LPAREN in_values RPAREN
+    | NOT IN LPAREN in_values RPAREN
+    | 
+;
+
+comparison: EQ
+    | NE
+    | LT
+    | LE
+    | GT
+    | GE
+;
+
+in_values: select_stmt
+    | expressions
+;
+
+additive: additive PLUS multiplicative
+    | additive MINUS multiplicative
+    | multiplicative
+;
+
+multiplicative: multiplicative STAR unary
+    | multiplicative SLASH unary
+    | multiplicative MOD unary
+    | unary
+;
+
+unary: MINUS unary
+    | PLUS unary
+    | primary
+;
+
+primary: literal
+    | column_ref
+    | aggregate
+    | LPAREN expression RPAREN
+    | scalar_query
+    | exists_expr
+;
+
+column_ref: ID
+    | ID DOT ID
+;
+
+aggregate: aggregate_name LPAREN aggregate_arg RPAREN
+;
+
+aggregate_name: COUNT
+    | SUM
+    | AVG
+    | MIN
+    | MAX
+;
+
+aggregate_arg: STAR
+    | expression
+;
+
+scalar_query: LPAREN select_stmt RPAREN
+;
+
+exists_expr: EXISTS LPAREN select_stmt RPAREN
+;
+
+literal: NUMBER
+    | REAL
+    | STRING
+    | TRUE
+    | FALSE
+    | NULL
+    | DATE STRING
+;
+
+

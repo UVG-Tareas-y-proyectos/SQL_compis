@@ -1,0 +1,6 @@
+YALex y YAPar se reutilizan del proyecto anterior del mismo grupo:
+https://github.com/UVG-Tareas-y-proyectos/fase_compilacion_compis
+Integrantes: Ihan Marroquin (23108) y Diego Patzan (23525).
+El lexer DFA y el parser SLR se generan con estos algoritmos propios.
+La especificación SQL, AST, semántica, intérprete, almacenamiento e índices
+se implementan en este repositorio. No se utiliza un DBMS ni un parser SQL externo.

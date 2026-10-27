@@ -1,0 +1,33 @@
+(* Lexer SQL generado por YALex propio. Las palabras se clasifican después. *)
+{
+from tok import Token
+}
+let DIGIT = [0-9]
+let LETTER = [a-zA-Z_]
+let ALNUM = [a-zA-Z0-9_]
+rule gettoken =
+  [ \t\r\n]+             { return None }
+| "--"[^\n]*             { return None }
+| "/*"([^*] | "*"+[^*/])*"*"+"/" { return None }
+| "'"([^'] | "''")*"'"   { return Token('STRING', lxm, line, col) }
+| '"'{LETTER}{ALNUM}*'"'  { return Token('ID', lxm, line, col) }
+| {DIGIT}+"."{DIGIT}+    { return Token('REAL', lxm, line, col) }
+| {DIGIT}+                { return Token('NUMBER', lxm, line, col) }
+| {LETTER}{ALNUM}*         { return Token('ID', lxm, line, col) }
+| "<="                    { return Token('LE', lxm, line, col) }
+| ">="                    { return Token('GE', lxm, line, col) }
+| "<>"                    { return Token('NE', lxm, line, col) }
+| "!="                    { return Token('NE', lxm, line, col) }
+| "="                     { return Token('EQ', lxm, line, col) }
+| "<"                     { return Token('LT', lxm, line, col) }
+| ">"                     { return Token('GT', lxm, line, col) }
+| "+"                     { return Token('PLUS', lxm, line, col) }
+| "-"                     { return Token('MINUS', lxm, line, col) }
+| "*"                     { return Token('STAR', lxm, line, col) }
+| "/"                     { return Token('SLASH', lxm, line, col) }
+| "%"                     { return Token('MOD', lxm, line, col) }
+| "("                     { return Token('LPAREN', lxm, line, col) }
+| ")"                     { return Token('RPAREN', lxm, line, col) }
+| ","                     { return Token('COMMA', lxm, line, col) }
+| "."                     { return Token('DOT', lxm, line, col) }
+| ";"                     { return Token('SEMI', lxm, line, col) }
