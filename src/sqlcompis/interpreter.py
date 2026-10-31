@@ -55,10 +55,71 @@ class Interpreter:
             self.check_constraints(schema, rows, node)
             self.write_rows(name, rows, metadata)
             return QueryResult(affected=len(node['rows']), message=f"{len(node['rows'])} registro(s) insertado(s).")
+        if kind == 'select':
+            return self.select(node, [])
+        if kind in {'update', 'delete'}:
+            name = node['table']
+            schema = metadata['tables'][name]
+            source = Node('source', {'table': name, 'alias': name}, node.line, node.column)
+            candidates = self.read_source(source, node['where'], [])
+            selected = [r for r in candidates if node['where'] is None or self.eval(node['where'], [{name: r}]) is True]
+            replacements = {}
+            for row in selected:
+                if kind == 'delete':
+                    replacements[row['__rid']] = None
+                else:
+                    replacement = dict(row)
+                    for assignment in node['assignments']:
+                        col = next(c for c in schema['columns'] if c['name'] == assignment['column'])
+                        replacement[col['name']] = convert(self.eval(assignment['expression'], [{name: row}]), col, assignment)
+                    replacements[row['__rid']] = replacement
+            if replacements:
+                # Reescribir el archivo no vuelve a evaluar WHERE sobre otras filas.
+                all_rows = self.storage.rows(name)
+                rows = [replacements.get(r['__rid'], r) for r in all_rows]
+                rows = [r for r in rows if r is not None]
+                self.check_constraints(schema, rows, node)
+                self.write_rows(name, rows, metadata)
+            return QueryResult(affected=len(selected), message=f'{len(selected)} registro(s) {"actualizado(s)" if kind == "update" else "eliminado(s)"}.', plan=self.plan)
         raise SQLError(f'sentencia aún no implementada: {kind}', node, 'ejecución')
 
     def write_rows(self, name, rows, metadata):
         self.storage.save_rows(name, rows, metadata)
+
+    def read_source(self, source, where, outer):
+        rows = self.storage.rows(source['table'])
+        self.plan.append({'table': source['table'], 'alias': source['alias'], 'access': 'recorrido completo',
+                          'indexes': [], 'rows_read': len(rows), 'total_rows': len(rows)})
+        return rows
+
+    def select(self, query, outer):
+        if query['joins'] or query.meta['aggregate']:
+            raise SQLError('JOIN y agrupación requieren su regla de ejecución', query, 'ejecución')
+        source = query['source']
+        contexts = ([{source['alias']: r} for r in self.read_source(source, query['where'], outer)] if source else [{}])
+        contexts = [c for c in contexts if query['where'] is None or self.eval(query['where'], [c, *outer]) is True]
+        records = []
+        for context in contexts:
+            frames = [context, *outer]
+            values = [self.eval(e, frames) for _, e in query.meta['projections']]
+            keys = [self.eval(o['expression'], frames) for o in query['order']]
+            records.append((values, keys))
+        return self.finish_select(query, records)
+
+    def finish_select(self, query, records):
+        if query['distinct']:
+            seen, unique = set(), []
+            for values, keys in records:
+                key = tuple(values)
+                if key not in seen:
+                    seen.add(key)
+                    unique.append((values, keys))
+            records = unique
+        for i in reversed(range(len(query['order']))):
+            records.sort(key=lambda r: (r[1][i] is not None, r[1][i]), reverse=query['order'][i]['descending'])
+        rows = [values for values, _ in records]
+        return QueryResult([name for name, _ in query.meta['projections']], rows, len(rows),
+                           f'{len(rows)} fila(s) consultada(s).', self.plan)
 
     def check_constraints(self, schema, rows, node):
         groups = ([schema['primary']] if schema['primary'] else []) + schema['unique']
