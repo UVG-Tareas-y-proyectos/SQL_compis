@@ -93,16 +93,36 @@ class Interpreter:
         return rows
 
     def select(self, query, outer):
-        if query['joins'] or query.meta['aggregate']:
-            raise SQLError('JOIN y agrupación requieren su regla de ejecución', query, 'ejecución')
         source = query['source']
         contexts = ([{source['alias']: r} for r in self.read_source(source, query['where'], outer)] if source else [{}])
+        for join in query['joins']:
+            source = join['source']
+            right = self.read_source(source, query['where'], outer)
+            combined = []
+            for left in contexts:
+                for row in right:
+                    context = {**left, source['alias']: row}
+                    if self.eval(join['on'], [context, *outer]) is True:
+                        combined.append(context)
+            contexts = combined
         contexts = [c for c in contexts if query['where'] is None or self.eval(query['where'], [c, *outer]) is True]
+        if query['group']:
+            groups = {}
+            for context in contexts:
+                key = tuple(self.eval(e, [context, *outer]) for e in query['group'])
+                groups.setdefault(key, []).append(context)
+            units = [(rows[0], rows) for rows in groups.values()]
+        elif query.meta['aggregate']:
+            units = [(contexts[0] if contexts else {}, contexts)]
+        else:
+            units = [(context, None) for context in contexts]
         records = []
-        for context in contexts:
+        for context, group in units:
             frames = [context, *outer]
-            values = [self.eval(e, frames) for _, e in query.meta['projections']]
-            keys = [self.eval(o['expression'], frames) for o in query['order']]
+            if query['having'] and self.eval(query['having'], frames, group) is not True:
+                continue
+            values = [self.eval(e, frames, group) for _, e in query.meta['projections']]
+            keys = [self.eval(o['expression'], frames, group) for o in query['order']]
             records.append((values, keys))
         return self.finish_select(query, records)
 
@@ -142,6 +162,23 @@ class Interpreter:
         if kind == 'column':
             depth, alias, column = expr.meta['binding']
             return frames[depth][alias][column]
+        if kind == 'aggregate':
+            if group is None:
+                raise SQLError('agregación sin grupo de ejecución', expr, 'ejecución')
+            if expr['argument'].kind == 'star':
+                return len(group)
+            values = [self.eval(expr['argument'], [row, *frames[1:]]) for row in group]
+            values = [value for value in values if value is not None]
+            name = expr['name']
+            if name == 'COUNT':
+                return len(values)
+            if not values:
+                return None
+            if name == 'SUM':
+                return sum(values)
+            if name == 'AVG':
+                return sum(values)/len(values)
+            return min(values) if name == 'MIN' else max(values)
         if kind == 'unary':
             value = self.eval(expr['operand'], frames, group)
             if value is None:
