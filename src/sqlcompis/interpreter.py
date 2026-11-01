@@ -7,6 +7,7 @@ import operator
 
 from .model import SQLError, Node
 from .types import convert, literal_value
+from .indexes import IndexManager
 
 
 @dataclass
@@ -22,6 +23,7 @@ class Interpreter:
     def __init__(self, storage):
         self.storage = storage
         self.plan = []
+        self.indexes = IndexManager(storage)
 
     def execute(self, node):
         metadata = deepcopy(self.storage.metadata)
@@ -55,6 +57,16 @@ class Interpreter:
             self.check_constraints(schema, rows, node)
             self.write_rows(name, rows, metadata)
             return QueryResult(affected=len(node['rows']), message=f"{len(node['rows'])} registro(s) insertado(s).")
+        if kind == 'create_index':
+            definition = {'table': node['table'], 'column': node['column']}
+            metadata['indexes'][node['name']] = definition
+            rows = self.storage.rows(node['table'])
+            self.storage.commit(metadata, {f"indexes/{node['name']}.json": self.indexes.build(definition, rows)})
+            return QueryResult(message=f"Índice '{node['name']}' creado.")
+        if kind == 'drop_index':
+            del metadata['indexes'][node['name']]
+            self.storage.commit(metadata, {f"indexes/{node['name']}.json": None})
+            return QueryResult(message=f"Índice '{node['name']}' eliminado.")
         if kind == 'select':
             return self.select(node, [])
         if kind in {'update', 'delete'}:
@@ -84,12 +96,16 @@ class Interpreter:
         raise SQLError(f'sentencia aún no implementada: {kind}', node, 'ejecución')
 
     def write_rows(self, name, rows, metadata):
-        self.storage.save_rows(name, rows, metadata)
+        self.storage.save_rows(name, rows, metadata, self.indexes.updates(name, rows, metadata))
 
     def read_source(self, source, where, outer):
-        rows = self.storage.rows(source['table'])
-        self.plan.append({'table': source['table'], 'alias': source['alias'], 'access': 'recorrido completo',
-                          'indexes': [], 'rows_read': len(rows), 'total_rows': len(rows)})
+        candidates = self.indexes.candidates(where, source,
+            lambda e: self.eval(e, [{}, *outer]), lambda q: self.select(q, [{}, *outer]))
+        rows = self.storage.rows(source['table'], candidates[0] if candidates is not None else None)
+        self.plan.append({'table': source['table'], 'alias': source['alias'],
+                          'access': 'índice' if candidates is not None else 'recorrido completo',
+                          'indexes': sorted(candidates[1]) if candidates is not None else [],
+                          'rows_read': len(rows), 'total_rows': self.storage.metadata['tables'][source['table']]['count']})
         return rows
 
     def select(self, query, outer):

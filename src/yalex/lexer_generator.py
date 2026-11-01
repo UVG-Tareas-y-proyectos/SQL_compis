@@ -65,6 +65,8 @@ class LexerGenerator:
             "        while i < n:",
             "            ch = text[i]",
             "            nxt = DFA_TRANS.get(state, {}).get(ch)",
+            "            if nxt is None and ord(ch) > 126:",
+            "                nxt = DFA_TRANS.get(state, {}).get('\\x00')",
             "            if nxt is None:",
             "                break",
             "            state = nxt",

@@ -15,7 +15,7 @@ except ImportError:
 # ASCII imprimible + espacios en blanco + caracteres del espanol, para que
 # las clases negadas ([^"] en strings, [^\n] en comentarios) los acepten.
 DEFAULT_ALPHABET = ({chr(c) for c in range(32, 127)} | {'\n', '\t', '\r'}
-                    | set('áéíóúÁÉÍÓÚñÑüÜ¿¡'))
+                    | set('áéíóúÁÉÍÓÚñÑüÜ¿¡') | {'\x00'})
 
 
 class NFAState:

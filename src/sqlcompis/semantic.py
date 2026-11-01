@@ -335,6 +335,9 @@ class SemanticAnalyzer:
             elif op in {'=', '!=', '<>', '<', '<=', '>', '>='}:
                 if not comparable(left, right):
                     raise SQLError('tipos incompatibles en comparación', expr)
+                for expected, other in [(left, expr['right']), (right, expr['left'])]:
+                    if expected == 'DATE' and other.kind == 'literal' and other['type'] == 'VARCHAR':
+                        convert(other['value'], {'name': 'comparación', 'type': 'DATE'}, other)
                 dtype = 'BOOLEAN'
             else:
                 if not {left, right} <= NUMERIC | {'NULL'}:

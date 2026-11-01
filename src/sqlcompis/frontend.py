@@ -45,7 +45,9 @@ class SQLFrontend:
         self.generated = Path(generated or ROOT / 'generated')
         self.generated.mkdir(parents=True, exist_ok=True)
         yal, yalp = ROOT / 'grammar' / 'SQL.yal', ROOT / 'grammar' / 'SQL.yalp'
-        fingerprint = hashlib.sha256(yal.read_bytes()+yalp.read_bytes()).hexdigest()
+        generator_sources = sorted((ROOT / 'src' / 'yalex').glob('*.py')) + sorted((ROOT / 'src' / 'yapar').glob('*.py'))
+        fingerprint = hashlib.sha256(yal.read_bytes()+yalp.read_bytes()+
+                                     b''.join(p.read_bytes() for p in generator_sources)).hexdigest()
         stamp = self.generated / 'sql.sha256'
         lexer_path = self.generated / 'sql_lexer.py'
         cache = self.generated / 'sql_slr.pkl'
