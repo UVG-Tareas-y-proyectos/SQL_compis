@@ -83,3 +83,17 @@ def test_drop_table_removes_index_files(db):
     ok(db, 'DROP TABLE t;')
     assert not (db.storage.root/'indexes/ix_id.json').exists()
     assert not db.storage.metadata['indexes']
+
+
+def test_uncorrelated_scalar_uses_index_and_is_evaluated_once(db):
+    result = ok(db, 'SELECT id FROM t WHERE id=(SELECT MAX(id) FROM s);').results[0]
+    assert result.rows == [[8]]
+    access = next(p for p in result.plan if p['table'] == 't')
+    assert access['access'] == 'índice' and access['rows_read'] == 1
+    assert len([p for p in result.plan if p['table'] == 's']) == 1
+
+
+def test_in_subquery_with_order_alias_does_not_require_binding_on_alias(db):
+    result = ok(db, 'SELECT id FROM t WHERE id IN (SELECT id AS x FROM s ORDER BY x) ORDER BY id;').results[0]
+    assert result.rows == [[2], [4], [8]]
+    assert len([p for p in result.plan if p['table'] == 's']) == 1

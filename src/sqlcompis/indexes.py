@@ -13,6 +13,10 @@ from .storage import encode_json
 from .types import convert
 
 
+def has_outer_references(query):
+    return any(n.kind == 'column' and n.meta.get('binding', (0,))[0] > 0 for n in query.walk())
+
+
 class IndexManager:
     def __init__(self, storage):
         self.storage = storage
@@ -29,8 +33,14 @@ class IndexManager:
                 for name, definition in metadata['indexes'].items() if definition['table'] == table}
 
     def constant(self, node):
-        return all(n.kind not in {'select', 'scalar', 'exists', 'aggregate'}
-                   and not (n.kind == 'column' and n.meta['binding'][0] == 0) for n in node.walk())
+        if node.kind == 'scalar':
+            return not has_outer_references(node['query'])
+        if node.kind in {'select', 'exists', 'aggregate'}:
+            return False
+        if node.kind == 'column':
+            return node.meta.get('binding', (0,))[0] > 0
+        return all(self.constant(child) for value in node.data.values()
+                   for child in (value if isinstance(value, list) else [value]) if isinstance(child, Node))
 
     def candidates(self, expr, source, evaluate, subquery):
         if expr is None:
@@ -79,7 +89,7 @@ class IndexManager:
             column = expr['left']
             values = expr['values']
             if isinstance(values, Node):
-                if any(n.kind == 'column' and n.meta['binding'][0] > 0 for n in values.walk()):
+                if has_outer_references(values):
                     return None
                 values = [r[0] for r in subquery(values).rows]
             else:

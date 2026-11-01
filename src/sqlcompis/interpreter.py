@@ -7,7 +7,7 @@ import operator
 
 from .model import SQLError, Node
 from .types import convert, literal_value
-from .indexes import IndexManager
+from .indexes import IndexManager, has_outer_references
 
 
 @dataclass
@@ -24,6 +24,7 @@ class Interpreter:
         self.storage = storage
         self.plan = []
         self.indexes = IndexManager(storage)
+        self.query_cache = {}
 
     def execute(self, node):
         metadata = deepcopy(self.storage.metadata)
@@ -100,7 +101,7 @@ class Interpreter:
 
     def read_source(self, source, where, outer):
         candidates = self.indexes.candidates(where, source,
-            lambda e: self.eval(e, [{}, *outer]), lambda q: self.select(q, [{}, *outer]))
+            lambda e: self.eval(e, [{}, *outer]), lambda q: self.subquery(q, [{}, *outer]))
         rows = self.storage.rows(source['table'], candidates[0] if candidates is not None else None)
         self.plan.append({'table': source['table'], 'alias': source['alias'],
                           'access': 'índice' if candidates is not None else 'recorrido completo',
@@ -169,6 +170,16 @@ class Interpreter:
                     raise SQLError(f"restricción de unicidad incumplida en {', '.join(columns)}", node)
                 seen.add(key)
 
+    def subquery(self, query, frames):
+        # Una consulta independiente de la fila exterior se evalúa una vez
+        # por sentencia. Las correlacionadas conservan su evaluación por fila.
+        if has_outer_references(query):
+            return self.select(query, frames)
+        key = id(query)
+        if key not in self.query_cache:
+            self.query_cache[key] = self.select(query, frames)
+        return self.query_cache[key]
+
     def eval(self, expr, frames, group=None):
         if 'alias_expr' in expr.meta:
             return self.eval(expr.meta['alias_expr'], frames, group)
@@ -227,7 +238,7 @@ class Interpreter:
             except (ArithmeticError, TypeError) as exc:
                 raise SQLError(f'operación inválida: {exc}', expr, 'ejecución') from exc
         if kind in {'scalar', 'exists'}:
-            result = self.select(expr['query'], frames)
+            result = self.subquery(expr['query'], frames)
             if kind == 'exists':
                 return bool(result.rows)
             if len(result.rows) > 1:
@@ -236,7 +247,7 @@ class Interpreter:
         if kind == 'in':
             left = self.eval(expr['left'], frames, group)
             values = expr['values']
-            values = ([r[0] for r in self.select(values, frames).rows] if isinstance(values, Node)
+            values = ([r[0] for r in self.subquery(values, frames).rows] if isinstance(values, Node)
                       else [self.eval(v, frames, group) for v in values])
             if not values:
                 result = False
